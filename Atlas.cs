@@ -24,13 +24,13 @@
         private const uint CitadelLineColor = 0xFF0000FF;
         private const uint TowerLineColor = 0xFFC6C10D;
         private const uint SearchLineColor = 0xFFFFFFFF;
-        private const uint GridLineColor = 0x50FFFFFF;
 
         private string SettingPathname => Path.Join(DllDirectory, "config", "settings.txt");
         private string NewGroupName = string.Empty;
 
         private static readonly Dictionary<string, ContentInfo> MapTags = [];
         private static readonly Dictionary<string, ContentInfo> MapPlain = [];
+        private static readonly Dictionary<byte, BiomeInfo> Biomes = [];
 
         public static IntPtr Handle { get; set; }
         private static int _handlePid;
@@ -49,6 +49,7 @@
                 Settings = JsonConvert.DeserializeObject<AtlasSettings>(content, serializerSettings);
             }
 
+            LoadBiomeMap();
             LoadContentMap();
         }
 
@@ -65,202 +66,219 @@
         public override void DrawSettings()
         {
             #region SettingsUI
-            ImGui.Checkbox("##ControllerMode", ref Settings.ControllerMode);
-            ImGui.SameLine(); 
-            ImGui.Text("Use Controller Mode");
+            ImGui.Checkbox("Use Controller Mode", ref Settings.ControllerMode);
             ImGui.Separator();
 
+            ImGui.Text("You can search for multiple maps at once. To do this, separate them with a comma ','");
+            ImGui.InputText("Search Map", ref Settings.SearchQuery, 256);
+            ImGui.SameLine();
+            ImGui.Checkbox("Draw Lines", ref Settings.DrawLinesSearchQuery);
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Clear"))
+                Settings.SearchQuery = string.Empty;
+            ImGui.SliderFloat("Draw Lines to Search in range", ref Settings.DrawSearchInRange, 1.0f, 10.0f);
+            ImGui.Separator();
+
+            ImGui.Checkbox("Draw Lines to Citadels", ref Settings.DrawLinesToCitadel);
+            ImGui.Checkbox("Draw Lines to Towers in range", ref Settings.DrawLinesToTowers);
+            ImGui.SameLine();
+            ImGui.SliderFloat("##DrawTowersInRange", ref Settings.DrawTowersInRange, 1.0f, 10.0f);
+            ImGui.Separator();
+
+            ImGui.Checkbox("Hide Completed Maps", ref Settings.HideCompletedMaps);
+            ImGui.Checkbox("Hide Not Accessible Maps", ref Settings.HideNotAccessibleMaps);
             ImGui.Checkbox("Draw Atlas Grid", ref Settings.DrawGrid);
             if (Settings.DrawGrid)
                 if (ImGui.CollapsingHeader("Atlas Grid Settings"))
                 {
                     ImGui.Checkbox("Hide connections to completed maps", ref Settings.GridSkipCompleted);
-                }
-
-            ImGui.Separator();
-
-            ImGui.Text("You can search for multiple maps at once. To do this, separate them with a comma ','");
-            ImGui.InputText("Search Map##AtlasSearch", ref Settings.SearchQuery, 256);
-            ImGui.SameLine();
-            ImGui.Checkbox("Draw Lines##DrawLineSearchQuery", ref Settings.DrawLinesSearchQuery);
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Clear##AtlasSearchClear")) 
-                Settings.SearchQuery = string.Empty;
-            ImGui.SliderFloat("##DrawSearchInRange", ref Settings.DrawSearchInRange, 1.0f, 10.0f);
-            ImGui.SameLine();
-            ImGui.Text("Draw Lines to Search in range");
-            ImGui.Separator();
-
-            ImGui.Checkbox("##ShowMapBadges", ref Settings.ShowMapBadges);
-            ImGui.SameLine(); 
-            ImGui.Text("Show Map Content Badges");
-            ImGui.Checkbox("##HideCompletedMaps", ref Settings.HideCompletedMaps);
-            ImGui.SameLine(); 
-            ImGui.Text("Hide Completed Maps");
-
-            ImGui.Checkbox("##HideNotAccessibleMaps", ref Settings.HideNotAccessibleMaps);
-            ImGui.SameLine(); ImGui.Text("Hide Not Accessible Maps");
-
-            ImGui.Separator();
-
-            ImGui.Checkbox("Auto Layout", ref Settings.AutoLayout);
-            var nudge = Settings.AnchorNudge;
-            if (ImGui.InputFloat2("Anchor Nudge (px)", ref nudge))
-                Settings.AnchorNudge = nudge;
-
-            ImGui.SliderFloat("##ScaleMultiplier", ref Settings.ScaleMultiplier, 0.5f, 2.0f);
-            ImGui.SameLine(); 
-            ImGui.Text("Scale Multiplier");
-
-            if (Settings.AutoLayout) 
-                ImGui.BeginDisabled();
-            ImGui.SliderFloat("##XSlider", ref Settings.XSlider, 0.0f, 3000.0f);
-            ImGui.SameLine(); 
-            ImGui.Text("Move X Axis");
-            ImGui.SliderFloat("##YSlider", ref Settings.YSlider, 0.0f, 3000.0f);
-            ImGui.SameLine(); 
-            ImGui.Text("Move Y Axis");
-            if (Settings.AutoLayout) 
-                ImGui.EndDisabled();
-
-            if (ImGui.CollapsingHeader("Badge Settings"))
-            {
-                foreach (var kv in MapTags.Concat(MapPlain))
-                {
-                    var key = kv.Key;
-                    var info = kv.Value;
-
-                    if (!Settings.ContentOverrides.TryGetValue(key, out var ov))
-                    {
-                        ov = new ContentOverride();
-                        Settings.ContentOverrides[key] = ov;
-                    }
-
+                    ColorSwatch("Grid Color", ref Settings.GridLineColor);
+                    ImGui.SameLine();
+                    ImGui.Text("Grid Color");
                     ImGui.Separator();
-                    ImGui.Text(info.Label);
+                }
 
-                    bool show = ov.Show ?? info.Show;
-                    if (ImGui.Checkbox($"##Show##{key}", ref show))
+            ImGui.Checkbox("Show Map Content Badges", ref Settings.ShowMapBadges);
+            if (Settings.ShowMapBadges)
+                if (ImGui.CollapsingHeader("Map Content Badge Settings"))
+                {
+                    foreach (var kv in MapTags.Concat(MapPlain))
                     {
-                        ov.Show = show;
-                        ApplyOverrides();
+                        var key = kv.Key;
+                        var info = kv.Value;
+
+                        if (!Settings.ContentOverrides.TryGetValue(key, out var ov))
+                        {
+                            ov = new ContentOverride();
+                            Settings.ContentOverrides[key] = ov;
+                        }
+
+                        ImGui.Text(info.Label);
+
+                        bool show = ov.Show ?? info.Show;
+                        if (ImGui.Checkbox($"##Show##{key}", ref show))
+                        {
+                            ov.Show = show;
+                            ApplyContentOverrides();
+                        }
+
+                        var bg = ov.BackgroundColor ?? info.BgColor;
+                        ImGui.SameLine();
+                        ColorSwatch($"Background Color##{key}", ref bg);
+                        if (!ColorsEqual(bg, ov.BackgroundColor ?? info.BgColor))
+                        {
+                            ov.BackgroundColor = bg;
+                            ApplyContentOverrides();
+                        }
+
+                        string abbrev = ov.Abbrev ?? info.Abbrev;
+                        ImGui.SameLine();
+                        ImGui.SetNextItemWidth(100);
+                        if (ImGui.InputText($"##Abbrev##{key}", ref abbrev, 16))
+                        {
+                            ov.Abbrev = abbrev;
+                            ApplyContentOverrides();
+                        }
+
+                        var fg = ov.FontColor ?? info.FtColor;
+                        ImGui.SameLine();
+                        ColorSwatch($"Font Color##{key}", ref fg);
+                        if (!ColorsEqual(fg, ov.FontColor ?? info.FtColor))
+                        {
+                            ov.FontColor = fg;
+                            ApplyContentOverrides();
+                        }
                     }
+                    ImGui.Separator();
+                }
 
-                    var bg = ov.BackgroundColor ?? info.BgColor;
-                    ImGui.SameLine();
-                    ColorSwatch($"Background Color##{key}", ref bg);
-                    if (!ColorsEqual(bg, ov.BackgroundColor ?? info.BgColor))
-                    {
-                        ov.BackgroundColor = bg;
-                        ApplyOverrides();
-                    }
+            ImGui.Checkbox("Show Biome Border", ref Settings.ShowBiomeBorder);
+            if (Settings.ShowBiomeBorder)
+                if (ImGui.CollapsingHeader("Biome Settings"))
+                {
+                    ImGui.SetNextItemWidth(180);
+                    ImGui.SliderFloat("Biome Border Thickness", ref Settings.BiomeBorderThickness, 1.0f, 6.0f);
 
-                    string abbrev = ov.Abbrev ?? info.Abbrev;
-                    ImGui.SameLine();
-                    ImGui.SetNextItemWidth(100);
-                    if (ImGui.InputText($"##Abbrev##{key}", ref abbrev, 16))
+                    if (ImGui.CollapsingHeader("Biomes Borders Colors"))
                     {
-                        ov.Abbrev = abbrev;
-                        ApplyOverrides();
-                    }
+                        foreach (var biome in Biomes)
+                        {
+                            var id = biome.Key;
+                            var info = biome.Value;
 
-                    var fg = ov.FontColor ?? info.FtColor;
-                    ImGui.SameLine();
-                    ColorSwatch($"Font Color##{key}", ref fg);
-                    if (!ColorsEqual(fg, ov.FontColor ?? info.FtColor))
-                    {
-                        ov.FontColor = fg;
-                        ApplyOverrides();
+                            if (!Settings.BiomeOverrides.TryGetValue(id, out var ov))
+                            {
+                                ov = new ContentOverride();
+                                Settings.BiomeOverrides[id] = ov;
+                            }
+
+                            bool show = ov.Show ?? info.Show;
+                            if (ImGui.Checkbox($"##Show##{id}", ref show))
+                            {
+                                ov.Show = show;
+                                ApplyContentOverrides();
+                            }
+
+                            var border = ov.BorderColor ?? info.BdColor;
+                            ImGui.SameLine();
+                            ColorSwatch($"Border Color##Biome{id}", ref border);
+                            if (!ColorsEqual(border, ov.BorderColor ?? info.BdColor))
+                            {
+                                ov.BorderColor = border;
+                                ApplyBiomeOverrides();
+                            }
+
+                            var label = string.IsNullOrWhiteSpace(info.Label) ? $"Biome {id}" : info.Label;
+                            ImGui.SameLine();
+                            ImGui.Text(label);
+                        }
                     }
                 }
-            }
             ImGui.Separator();
 
-            ImGui.Checkbox("##DrawLinesToCitadel", ref Settings.DrawLinesToCitadel);
-            ImGui.SameLine();
-            ImGui.Text("Draw Lines to Citadels");
-
-            ImGui.Checkbox("##DrawLinesToTowers", ref Settings.DrawLinesToTowers);
-            ImGui.SameLine();
-            ImGui.Text("Draw Lines to Towers in range");
-            ImGui.SameLine();
-            ImGui.SliderFloat("##DrawTowersInRange", ref Settings.DrawTowersInRange, 1.0f, 10.0f);
-
+            ImGui.Text("Layout Settings");
+            var nudge = Settings.AnchorNudge;
+            if (ImGui.SliderFloat2("Layout Nudge (px)", ref nudge, -60f, 60f))
+                Settings.AnchorNudge = nudge;
+            ImGui.SliderFloat("Scale Multiplier", ref Settings.ScaleMultiplier, 0.5f, 3.0f);
             ImGui.Separator();
 
-            ImGui.InputText("##MapGroupName", ref Settings.GroupNameInput, 256);
-            ImGui.SameLine();
-            if (ImGui.Button("Add new map group"))
+            if (ImGui.CollapsingHeader("Map Groups Settings"))
             {
-                Settings.MapGroups.Add(new MapGroupSettings(Settings.GroupNameInput, Settings.DefaultBackgroundColor, Settings.DefaultFontColor));
-                Settings.GroupNameInput = string.Empty;
-            }
-
-            for (int i = 0; i < Settings.MapGroups.Count; i++)
-            {
-                var mapGroup = Settings.MapGroups[i];
-                if (ImGui.CollapsingHeader($"{mapGroup.Name}##MapGroup{i}"))
+                ImGui.InputText("##MapGroupName", ref Settings.GroupNameInput, 256);
+                ImGui.SameLine();
+                if (ImGui.Button("Add new map group"))
                 {
-                    float buttonSize = ImGui.GetFrameHeight();
-                    if (TriangleButton($"##Up{i}", buttonSize, new Vector4(1, 1, 1, 1), true)) 
-                    { 
-                        MoveMapGroup(i, -1); 
-                    }
-                    ImGui.SameLine();
-                    if (TriangleButton($"##Down{i}", buttonSize, new Vector4(1, 1, 1, 1), false)) 
-                    { 
-                        MoveMapGroup(i, 1); 
-                    }
-                    ImGui.SameLine();
-                    if (ImGui.Button($"Rename Group##{i}")) 
-                    { 
-                        NewGroupName = mapGroup.Name; 
-                        ImGui.OpenPopup($"RenamePopup##{i}"); 
-                    }
-                    ImGui.SameLine();
-                    if (ImGui.Button($"Delete Group##{i}")) 
-                    { 
-                        DeleteMapGroup(i); 
-                    }
-                    ImGui.SameLine();
-                    ColorSwatch($"##MapGroupBackgroundColor{i}", ref mapGroup.BackgroundColor);
-                    ImGui.SameLine(); 
-                    ImGui.Text("Background Color");
-                    ImGui.SameLine();
-                    ColorSwatch($"##MapGroupFontColor{i}", ref mapGroup.FontColor);
-                    ImGui.SameLine(); ImGui.Text("Font Color");
+                    Settings.MapGroups.Add(new MapGroupSettings(Settings.GroupNameInput, Settings.DefaultBackgroundColor, Settings.DefaultFontColor));
+                    Settings.GroupNameInput = string.Empty;
+                }
 
-                    for (int j = 0; j < mapGroup.Maps.Count; j++)
+                for (int i = 0; i < Settings.MapGroups.Count; i++)
+                {
+                    var mapGroup = Settings.MapGroups[i];
+                    if (ImGui.CollapsingHeader($"{mapGroup.Name}##MapGroup{i}"))
                     {
-                        var mapName = mapGroup.Maps[j];
-                        if (ImGui.InputText($"##MapName{i}-{j}", ref mapName, 256))
-                            mapGroup.Maps[j] = mapName;
-
-                        ImGui.SameLine();
-                        if (ImGui.Button($"Delete##MapNameDelete{i}-{j}"))
+                        float buttonSize = ImGui.GetFrameHeight();
+                        if (TriangleButton($"##Up{i}", buttonSize, new Vector4(1, 1, 1, 1), true))
                         {
-                            mapGroup.Maps.RemoveAt(j);
-                            break;
-                        }
-                    }
-
-                    if (ImGui.Button($"Add new map##AddNewMap{i}"))
-                        mapGroup.Maps.Add(string.Empty);
-
-                    if (ImGui.BeginPopupModal($"RenamePopup##{i}", ImGuiWindowFlags.AlwaysAutoResize))
-                    {
-                        ImGui.InputText("New Name", ref NewGroupName, 256);
-                        if (ImGui.Button("OK")) 
-                        { 
-                            mapGroup.Name = NewGroupName; 
-                            ImGui.CloseCurrentPopup(); 
+                            MoveMapGroup(i, -1);
                         }
                         ImGui.SameLine();
-                        if (ImGui.Button("Cancel")) 
-                        { 
-                            ImGui.CloseCurrentPopup(); 
+                        if (TriangleButton($"##Down{i}", buttonSize, new Vector4(1, 1, 1, 1), false))
+                        {
+                            MoveMapGroup(i, 1);
                         }
-                        ImGui.EndPopup();
+                        ImGui.SameLine();
+                        if (ImGui.Button($"Rename Group##{i}"))
+                        {
+                            NewGroupName = mapGroup.Name;
+                            ImGui.OpenPopup($"RenamePopup##{i}");
+                        }
+                        ImGui.SameLine();
+                        if (ImGui.Button($"Delete Group##{i}"))
+                        {
+                            DeleteMapGroup(i);
+                        }
+                        ImGui.SameLine();
+                        ColorSwatch($"##MapGroupBackgroundColor{i}", ref mapGroup.BackgroundColor);
+                        ImGui.SameLine();
+                        ImGui.Text("Background Color");
+                        ImGui.SameLine();
+                        ColorSwatch($"##MapGroupFontColor{i}", ref mapGroup.FontColor);
+                        ImGui.SameLine(); ImGui.Text("Font Color");
+
+                        for (int j = 0; j < mapGroup.Maps.Count; j++)
+                        {
+                            var mapName = mapGroup.Maps[j];
+                            if (ImGui.InputText($"##MapName{i}-{j}", ref mapName, 256))
+                                mapGroup.Maps[j] = mapName;
+
+                            ImGui.SameLine();
+                            if (ImGui.Button($"Delete##MapNameDelete{i}-{j}"))
+                            {
+                                mapGroup.Maps.RemoveAt(j);
+                                break;
+                            }
+                        }
+
+                        if (ImGui.Button($"Add new map##AddNewMap{i}"))
+                            mapGroup.Maps.Add(string.Empty);
+
+                        if (ImGui.BeginPopupModal($"RenamePopup##{i}", ImGuiWindowFlags.AlwaysAutoResize))
+                        {
+                            ImGui.InputText("New Name", ref NewGroupName, 256);
+                            if (ImGui.Button("OK"))
+                            {
+                                mapGroup.Name = NewGroupName;
+                                ImGui.CloseCurrentPopup();
+                            }
+                            ImGui.SameLine();
+                            if (ImGui.Button("Cancel"))
+                            {
+                                ImGui.CloseCurrentPopup();
+                            }
+                            ImGui.EndPopup();
+                        }
                     }
                 }
             }
@@ -340,10 +358,6 @@
                     var centers = new Dictionary<StdTuple2D<int>, Vector2>();
                     var completed = new HashSet<StdTuple2D<int>>();
 
-                    Vector2 renderOffset = Settings.AutoLayout
-                        ? Settings.AnchorNudge
-                        : new Vector2(Settings.XSlider - 1500f, Settings.YSlider - 1500f);
-
                     for (int i = 0; i < vecCount; i++)
                     {
                         var entry = ReadVectorAt<AtlasNodeEntry>(atlasMap.AtlasNodes, i);
@@ -411,7 +425,7 @@
                                 if (Settings.GridSkipCompleted && (completed.Contains(src) || completed.Contains(dst)))
                                     continue;
 
-                                drawList.AddLine(a, b, GridLineColor, lineTh);
+                                drawList.AddLine(a, b, ImGuiHelper.Color(Settings.GridLineColor), lineTh);
                             }
                         }
                     }
@@ -455,32 +469,16 @@
 
                     var textSize = ImGui.CalcTextSize(mapName);
 
-                    Vector2 drawPosition;
-                    if (Settings.AutoLayout)
-                    {
-                        var nodeTopLeft = GetFinalTopLeft(in atlasNode.UiElementBase);
-                        var nodeScale = ComputeScalePair(in atlasNode.UiElementBase);
-                        var nodeSize = new Vector2(
-                            atlasNode.UiElementBase.UnscaledSize.X * nodeScale.X,
-                            atlasNode.UiElementBase.UnscaledSize.Y * nodeScale.Y);
+                    var nodeTopLeft = GetFinalTopLeft(in atlasNode.UiElementBase);
+                    var nodeScale = ComputeScalePair(in atlasNode.UiElementBase);
+                    var nodeSize = new Vector2(
+                        atlasNode.UiElementBase.UnscaledSize.X * nodeScale.X,
+                        atlasNode.UiElementBase.UnscaledSize.Y * nodeScale.Y);
 
-                        var nodeCenter = nodeTopLeft + nodeSize * 0.5f;
-                        drawPosition = nodeCenter - textSize * 0.5f;
+                    var nodeCenter = nodeTopLeft + nodeSize * 0.5f;
+                    Vector2 drawPosition = nodeCenter - textSize * 0.5f;
 
-                        drawPosition += Settings.AnchorNudge;
-                    }
-                    else
-                    {
-                        var nodeTopLeft = GetFinalTopLeft(in atlasNode.UiElementBase);
-                        var nodeScale = ComputeScalePair(in atlasNode.UiElementBase);
-                        var nodeSize = new Vector2(
-                            atlasNode.UiElementBase.UnscaledSize.X * nodeScale.X,
-                            atlasNode.UiElementBase.UnscaledSize.Y * nodeScale.Y);
-
-                        var nodeCenter = nodeTopLeft + nodeSize * 0.5f;
-                        var posOffset = new Vector2(Settings.XSlider - 1500f, Settings.YSlider - 1500f);
-                        drawPosition = nodeCenter - textSize * 0.5f + posOffset;
-                    }
+                    drawPosition += Settings.AnchorNudge;
 
                     var group = Settings.MapGroups.Find(g => g.Maps.Exists(
                         m => NormalizeName(m).Equals(mapName, StringComparison.OrdinalIgnoreCase)));
@@ -489,7 +487,7 @@
                     var fontColor = group?.FontColor ?? Settings.DefaultFontColor;
 
                     if (atlasNode.IsCompleted)
-                        backgroundColor.W *= 0.6f;
+                        backgroundColor.W *= 0.4f;
 
                     var padding = new Vector2(5, 2) * uiScale;
                     var bgPos = drawPosition - padding;
@@ -499,13 +497,30 @@
 
                     float rounding = 3f * uiScale;
                     float borderTh = MathF.Max(1f, 1f * uiScale);
-                    drawList.AddRect(bgPos, bgPos + bgSize, ImGuiHelper.Color(fontColor), rounding, ImDrawFlags.RoundCornersAll, borderTh);
+
+                    if (Settings.ShowBiomeBorder && Biomes.TryGetValue(atlasNode.BiomeId, out var biome))
+                    {
+                        var biomeColor = biome.BdColor;
+                        if (atlasNode.IsCompleted)
+                            biomeColor.W *= 0.4f;
+
+                        float bBorderTh = MathF.Max(1f, uiScale * Settings.BiomeBorderThickness);
+
+                        var half = bBorderTh * 0.5f;
+                        var outMin = bgPos - new Vector2(half, half);
+                        var outMax = (bgPos + bgSize) + new Vector2(half, half);
+                        var outRounding = MathF.Max(0f, rounding + half);
+
+                        drawList.AddRect(outMin, outMax, ImGuiHelper.Color(biomeColor),
+                            outRounding, ImDrawFlags.RoundCornersAll, bBorderTh);
+                    }
+
                     drawList.AddRectFilled(bgPos, bgPos + bgSize, ImGuiHelper.Color(backgroundColor), rounding);
                     drawList.AddText(drawPosition, ImGuiHelper.Color(fontColor), mapName);
 
                     if (Settings.DrawLinesToCitadel && mapName.EndsWith("Citadel", StringComparison.OrdinalIgnoreCase))
                     {
-                        drawList.AddLine(playerLocation, intersectionPoint, CitadelLineColor, borderTh);
+                        drawList.AddLine(playerLocation, intersectionPoint, CitadelLineColor);
                     }
 
                     if (Settings.DrawLinesToTowers
@@ -513,14 +528,14 @@
                         && !atlasNode.IsCompleted
                         && boundsTowers.Contains(new PointF(drawPosition.X, drawPosition.Y)))
                     {
-                        drawList.AddLine(playerLocation, intersectionPoint, TowerLineColor, borderTh);
+                        drawList.AddLine(playerLocation, intersectionPoint, TowerLineColor);
                     }
 
                     if (Settings.DrawLinesSearchQuery
                         && doSearch && searchList.Any(searchTerm => mapName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
                         && boundsSearch.Contains(new PointF(drawPosition.X, drawPosition.Y)))
                     {
-                        drawList.AddLine(playerLocation, intersectionPoint, SearchLineColor, borderTh);
+                        drawList.AddLine(playerLocation, intersectionPoint, SearchLineColor);
                     }
 
                     float labelCenterX = drawPosition.X + textSize.X * 0.5f;
@@ -535,6 +550,29 @@
                     DrawSquares(drawList, contents, labelCenterX, ref nextRowTopY, rowGap, uiScale);
                 }
             }
+        }
+
+        private void LoadBiomeMap()
+        {
+            var path = Path.Join(DllDirectory, "json", "biome.json");
+            if (!File.Exists(path))
+                return;
+
+            var json = File.ReadAllText(path);
+            var contents = JsonConvert.DeserializeObject<Dictionary<string, BiomeInfo>>(json);
+
+            Biomes.Clear();
+
+            if (contents is null)
+                return;
+
+            foreach (var content in contents)
+            {
+                if (byte.TryParse(content.Key, out var id))
+                    Biomes[id] = content.Value;
+            }
+
+            ApplyBiomeOverrides();
         }
 
         private void LoadContentMap()
@@ -560,7 +598,7 @@
                     MapPlain[content.Key] = content.Value;
             }
 
-            ApplyOverrides();
+            ApplyContentOverrides();
         }
 
         private static Vector2 ComputeScalePair(in UiElementBaseOffset uiBase)
@@ -1093,7 +1131,22 @@
             return null;
         }
 
-        private void ApplyOverrides()
+        private void ApplyBiomeOverrides()
+        {
+            foreach (var entry in Settings.BiomeOverrides)
+            {
+                if (Biomes.TryGetValue(entry.Key, out var info))
+                {
+                    var ov = entry.Value;
+                    if (ov.BorderColor.HasValue)
+                        info.BorderColor = [ov.BorderColor.Value.X, ov.BorderColor.Value.Y, ov.BorderColor.Value.Z, ov.BorderColor.Value.W];
+                    if (ov.Show.HasValue)
+                        info.Show = ov.Show.Value;
+                }
+            }
+        }
+
+        private void ApplyContentOverrides()
         {
             foreach (var entry in Settings.ContentOverrides)
             {

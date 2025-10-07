@@ -125,6 +125,7 @@ namespace Atlas
         [FieldOffset(0x000)] public UiElementBaseOffset UiElementBase;
         [FieldOffset(0x270)] public IntPtr NodeNameAddress;
         [FieldOffset(0x290)] public AtlasNodeState Flags;
+        [FieldOffset(0x293)] public byte BiomeId;
 
         public readonly bool IsAccessible => Flags.HasFlag(AtlasNodeState.AccessibleNow);
         public readonly bool IsNotAccessible => !IsAccessible;

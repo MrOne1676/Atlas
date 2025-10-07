@@ -6,62 +6,63 @@ namespace Atlas
 {
     public sealed class AtlasSettings : IPSettings
     {
-        public Vector4 DefaultBackgroundColor = new(0.0f, 0.0f, 0.0f, 0.4f);
-        public Vector4 DefaultFontColor = new(1.0f, 1.0f, 1.0f, 1.0f);
+        public Vector4 DefaultBackgroundColor = new(0f, 0f, 0f, 0.85f);
+        public Vector4 DefaultFontColor = new(1f, 1f, 1f, 1.0f);
 
         public bool ControllerMode = false;
-        public bool DrawGrid = false;
-        public bool GridSkipCompleted = false;
 
         public string SearchQuery = string.Empty;
         public bool DrawLinesSearchQuery = true;
         public float DrawSearchInRange = 1.3f;
 
-        public bool ShowMapBadges = true;
-        public bool HideCompletedMaps = true;
-        public bool HideNotAccessibleMaps = false;
-        public bool HideFailedMaps = true;
-
-        public bool AutoLayout = true;
-        public float BaseWidth = 1920f;
-        public float BaseHeight = 1080f;
-        public Vector2 AnchorNudge = Vector2.Zero;
-
-        public float ScaleMultiplier = 1.1f;
-        public float XSlider = 1500.0f;
-        public float YSlider = 1500.0f;
-
         public bool DrawLinesToCitadel = false;
         public bool DrawLinesToTowers = false;
         public float DrawTowersInRange = 1.3f;
+
+        public bool HideCompletedMaps = true;
+        public bool HideNotAccessibleMaps = false;
+        public bool HideFailedMaps = true;
+        public bool DrawGrid = false;
+        public Vector4 GridLineColor = new(1f, 1f, 1f, 0.35f);
+        public bool GridSkipCompleted = false;
+        public bool ShowMapBadges = true;
+        public bool ShowBiomeBorder = true;
+        public float BiomeBorderThickness = 2.5f;
+
+        public float BaseWidth = 1920f;
+        public float BaseHeight = 1080f;
+        public Vector2 AnchorNudge = Vector2.Zero;
+        public float ScaleMultiplier = 1.1f;
+
         public List<MapGroupSettings> MapGroups = [];
         public string GroupNameInput = string.Empty;
         
         public Dictionary<string, ContentOverride> ContentOverrides = [];
+        public Dictionary<byte, ContentOverride> BiomeOverrides = [];
 
         public AtlasSettings()
         {
-            var citadels = new MapGroupSettings("Citadels", new Vector4(1.0f, 0.0f, 0.0f, 0.4f), new Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+            var citadels = new MapGroupSettings("Citadels", new Vector4(1f, 1f, 1f, 0.85f), new Vector4(1f, 0f, 0f, 1f));
             citadels.Maps.Add("The Copper Citadel");
             citadels.Maps.Add("The Iron Citadel");
             citadels.Maps.Add("The Stone Citadel");
 
-            var pinnacleBosses = new MapGroupSettings("Pinnacle Boss", new Vector4(1.0f, 0.0f, 0.857f, 0.4f), new Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+            var pinnacleBosses = new MapGroupSettings("Pinnacle Boss", new Vector4(0.471f, 0.196f, 0.471f, 0.85f), new Vector4(1f, 1f, 1f, 1f));
             pinnacleBosses.Maps.Add("The Burning Monolith");
 
-            var unique = new MapGroupSettings("Unique", new Vector4(1.0f, 0.5f, 0.0f, 0.6f), new Vector4(0.0f, 0.0f, 0.0f, 1.0f));
-            unique.Maps.Add("Untainted Paradise");
-            unique.Maps.Add("Vaults of Kamasa");
-            unique.Maps.Add("Moment of Zen");
-            unique.Maps.Add("The Ezomyte Megaliths");
-            unique.Maps.Add("Derelict Mansion");
-            unique.Maps.Add("The Viridian Wildwood");
-            unique.Maps.Add("The Jade Isles");
-            unique.Maps.Add("Castaway");
-            unique.Maps.Add("The Fractured Lake");
-            unique.Maps.Add("Ice Cave");
+            var special = new MapGroupSettings("Special", new Vector4(0.737f, 0.376f, 0.145f, 0.85f), new Vector4(0f, 0f, 0f, 1f));
+            special.Maps.Add("Untainted Paradise");
+            special.Maps.Add("Vaults of Kamasa");
+            special.Maps.Add("Moment of Zen");
+            special.Maps.Add("The Ezomyte Megaliths");
+            special.Maps.Add("Derelict Mansion");
+            special.Maps.Add("The Viridian Wildwood");
+            special.Maps.Add("The Jade Isles");
+            special.Maps.Add("Castaway");
+            special.Maps.Add("The Fractured Lake");
+            special.Maps.Add("Ice Cave");
 
-            var good = new MapGroupSettings("Good", new Vector4(0.0f, 1.0f, 0.0f, 0.4f), new Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+            var good = new MapGroupSettings("Good", new Vector4(0.157f, 0.157f, 0f, 0.85f), new Vector4(1f, 1f, 0f, 1f));
             good.Maps.Add("Burial Bog");
             good.Maps.Add("Creek");
             good.Maps.Add("Rustbowl");
@@ -72,7 +73,7 @@ namespace Atlas
             good.Maps.Add("Wetlands");
             good.Maps.Add("Willow");
 
-            var towers = new MapGroupSettings("Towers", new Vector4(0.05f, 0.75f, 0.73f, 0.4f), new Vector4(0.0f, 0.0f, 0.0f, 1.0f));
+            var towers = new MapGroupSettings("Towers", new Vector4(0.863f, 0f, 0.882f, 0.85f), new Vector4(0f, 0f, 0f, 1f));
             towers.Maps.Add("Bluff");
             towers.Maps.Add("Lost Towers");
             towers.Maps.Add("Mesa");
@@ -83,7 +84,7 @@ namespace Atlas
             MapGroups.Add(towers);
             MapGroups.Add(pinnacleBosses);
             MapGroups.Add(good);
-            MapGroups.Add(unique);
+            MapGroups.Add(special);
         }
     }
 
@@ -99,6 +100,7 @@ namespace Atlas
     public class ContentOverride
     {
         public Vector4? BackgroundColor { get; set; }
+        public Vector4? BorderColor { get; set; }
         public Vector4? FontColor { get; set; }
         public bool? Show { get; set; }
         public string Abbrev { get; set; }
