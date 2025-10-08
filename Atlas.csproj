@@ -47,4 +47,6 @@
     </None>
   </ItemGroup>
 
+  <ProjectExtensions><VisualStudio><UserProperties json_4biome_1json__JsonSchema="" /></VisualStudio></ProjectExtensions>
+
 </Project>

@@ -176,7 +176,7 @@
                             if (ImGui.Checkbox($"##Show##{id}", ref show))
                             {
                                 ov.Show = show;
-                                ApplyContentOverrides();
+                                ApplyBiomeOverrides();
                             }
 
                             var border = ov.BorderColor ?? info.BdColor;
@@ -498,7 +498,8 @@
                     float rounding = 3f * uiScale;
                     float borderTh = MathF.Max(1f, 1f * uiScale);
 
-                    if (Settings.ShowBiomeBorder && Biomes.TryGetValue(atlasNode.BiomeId, out var biome))
+                    if (Settings.ShowBiomeBorder && Biomes.TryGetValue(atlasNode.BiomeId, out var biome)
+                        && biome.Show)
                     {
                         var biomeColor = biome.BdColor;
                         if (atlasNode.IsCompleted)
