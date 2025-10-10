@@ -29,6 +29,9 @@ namespace Atlas
         public bool ShowBiomeBorder = true;
         public float BiomeBorderThickness = 2.5f;
 
+        public bool RouteLinesThroughNodes = true;
+        public float PathLineThickness = 6f;
+
         public float BaseWidth = 1920f;
         public float BaseHeight = 1080f;
         public Vector2 AnchorNudge = Vector2.Zero;
@@ -36,7 +39,7 @@ namespace Atlas
 
         public List<MapGroupSettings> MapGroups = [];
         public string GroupNameInput = string.Empty;
-        
+
         public Dictionary<string, ContentOverride> ContentOverrides = [];
         public Dictionary<byte, ContentOverride> BiomeOverrides = [];
 

@@ -21,15 +21,19 @@ namespace Atlas
         {
             if (vector.First == IntPtr.Zero || vector.Last == IntPtr.Zero)
                 return 0;
+
             long bytes = vector.Last.ToInt64() - vector.First.ToInt64();
             if (bytes <= 0)
                 return 0;
+
             int stride = IntPtr.Size;
             if ((bytes % stride) != 0)
                 return 0;
+
             long count = bytes / stride;
             if (count <= 0 || count > MaxChildren)
                 return 0;
+
             return (int)count;
         }
 
@@ -41,6 +45,7 @@ namespace Atlas
             get
             {
                 var vector = UiElementBase.ChildrensPtr;
+
                 return CountFromSnapshot(vector);
             }
         }
@@ -58,6 +63,7 @@ namespace Atlas
         public readonly UiElement GetChild(int index)
         {
             var address = GetChildAddress(index);
+
             return address == IntPtr.Zero ? default : Atlas.Read<UiElement>(address);
         }
 
@@ -72,8 +78,10 @@ namespace Atlas
             int count = CountFromSnapshot(in vector);
             if ((uint)index >= (uint)count)
                 return IntPtr.Zero;
+
             int stride = IntPtr.Size;
             var slot = IntPtr.Add(vector.First, index * stride);
+
             return Atlas.Read<IntPtr>(slot);
         }
 
@@ -85,6 +93,7 @@ namespace Atlas
         public readonly AtlasNode GetAtlasNode(int index)
         {
             var address = GetChildAddress(index);
+
             return address == IntPtr.Zero ? default : Atlas.Read<AtlasNode>(address);
         }
     }
@@ -137,6 +146,7 @@ namespace Atlas
             get
             {
                 var buffer = Atlas.Read<IntPtr>(NodeNameAddress + 0x8);
+
                 return Atlas.ReadWideString(buffer, 64);
             }
         }
