@@ -16,6 +16,7 @@ namespace Atlas
         public float DrawSearchInRange = 1.3f;
 
         public bool DrawLinesToCitadel = false;
+        public float DrawCitadelInRange = 10f;
         public bool DrawLinesToTowers = false;
         public float DrawTowersInRange = 1.3f;
 

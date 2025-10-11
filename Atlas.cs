@@ -18,6 +18,7 @@
     using System.Numerics;
     using System.Runtime.InteropServices;
     using System.Text;
+    using System.Xml.Linq;
 
     public sealed class Atlas : PCore<AtlasSettings>
     {
@@ -83,16 +84,22 @@
             if (ImGui.TreeNode("Draw Lines Settings"))
             {
                 ImGui.Checkbox("Route Lines Through Nodes (Shortest Path)", ref Settings.RouteLinesThroughNodes);
-                ImGui.SameLine();
-                ImGui.SetNextItemWidth(150);
+                ImGui.SameLine(353);
+                ImGui.SetNextItemWidth(170);
                 ImGui.SliderFloat("Path Thickness", ref Settings.PathLineThickness, 1.0f, 8.0f);
+                float sliderStartX = 273.0f;
                 ImGui.Checkbox("Draw Lines to Search in range", ref Settings.DrawLinesSearchQuery);
-                ImGui.SameLine();
-                ImGui.SliderFloat("##DrawSearchInRange", ref Settings.DrawSearchInRange, 1.0f, 10.0f);
-                ImGui.Checkbox("Draw Lines to Citadels", ref Settings.DrawLinesToCitadel);
+                ImGui.SameLine(sliderStartX);
+                ImGui.SetNextItemWidth(250);
+                ImGui.SliderFloat("##DrawSearchInRange", ref Settings.DrawSearchInRange, 1.0f, 12.0f);
+                ImGui.Checkbox("Draw Lines to Citadels in range", ref Settings.DrawLinesToCitadel);
+                ImGui.SameLine(sliderStartX);
+                ImGui.SetNextItemWidth(250);
+                ImGui.SliderFloat("##DrawCitadelInRange", ref Settings.DrawCitadelInRange, 1.0f, 12.0f);
                 ImGui.Checkbox("Draw Lines to Towers in range", ref Settings.DrawLinesToTowers);
-                ImGui.SameLine();
-                ImGui.SliderFloat("##DrawTowersInRange", ref Settings.DrawTowersInRange, 1.0f, 10.0f);
+                ImGui.SameLine(sliderStartX);
+                ImGui.SetNextItemWidth(250);
+                ImGui.SliderFloat("##DrawTowersInRange", ref Settings.DrawTowersInRange, 1.0f, 12.0f);
                 ImGui.TreePop();
             }
 
@@ -358,12 +365,7 @@
                     out nodeCenters, out graph, out nodeCompleted, out nodeAccessible);
             }
 
-            var towers = new HashSet<string>(
-                Settings.MapGroups
-                    .Where(tower => string.Equals(tower.Name, "Towers", StringComparison.OrdinalIgnoreCase))
-                    .SelectMany(tower => tower.Maps)
-                    .Select(NormalizeName),
-                StringComparer.OrdinalIgnoreCase);
+            var towers = LoadTowerMaps();
             var boundsTowers = CalculateBounds(Settings.DrawTowersInRange);
 
             var searchQuery = NormalizeName(Settings.SearchQuery);
@@ -378,11 +380,12 @@
                     .ToList();
             }
             var boundsSearch = CalculateBounds(Settings.DrawSearchInRange);
+            var boundsCitadels = CalculateBounds(Settings.DrawCitadelInRange);
 
             var playerLocation = Core.States.InGameStateObject.CurrentWorldInstance.WorldToScreen(playerRender.WorldPosition);
 
-            float resScale = ComputeRelativeUiScale(in atlasUi.UiElementBase, Settings.BaseWidth, Settings.BaseHeight);
-            float uiScale = Math.Clamp(Settings.ScaleMultiplier * resScale, 0.5f, 4.0f);
+            float uiScale = ComputeUiScale();
+
             using (new FontScaleScope(uiScale))
             {
                 if (!Settings.ControllerMode)
@@ -410,7 +413,6 @@
                             node.UiElementBase.UnscaledSize.Y * nodeScale.Y);
 
                         var nodeCenter = nodeTopLeft + nodeSize * 0.5f;
-
                         if (!panelRect.Contains(nodeCenter.X, nodeCenter.Y))
                             continue;
 
@@ -540,11 +542,13 @@
                     var padding = new Vector2(5, 2) * uiScale;
                     var bgPos = drawPosition - padding;
                     var bgSize = textSize + padding * 2;
-                    var rectCenter = (bgPos + (bgPos + bgSize)) * 0.5f;
-                    var intersectionPoint = GetLineRectangleIntersection(playerLocation, rectCenter, bgPos, bgPos + bgSize);
 
-                    bool shouldDrawCitadel = Settings.DrawLinesToCitadel && mapName.EndsWith("Citadel", StringComparison.OrdinalIgnoreCase);
-                    bool shouldDrawTower = Settings.DrawLinesToTowers && towers.Contains(mapName) && !atlasNode.IsCompleted && boundsTowers.Contains(new PointF(drawPosition.X, drawPosition.Y));
+                    bool shouldDrawCitadel = Settings.DrawLinesToCitadel
+                        && mapName.EndsWith("Citadel", StringComparison.OrdinalIgnoreCase)
+                        && boundsCitadels.Contains(new PointF(drawPosition.X, drawPosition.Y));
+                    bool shouldDrawTower = Settings.DrawLinesToTowers
+                        && towers.Contains(mapName) && !atlasNode.IsCompleted
+                        && boundsTowers.Contains(new PointF(drawPosition.X, drawPosition.Y));
                     bool shouldDrawSearch = Settings.DrawLinesSearchQuery && doSearch
                         && searchList.Any(searchTerm => mapName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
                         && boundsSearch.Contains(new PointF(drawPosition.X, drawPosition.Y));
@@ -570,14 +574,11 @@
                             else
                             {
                                 drawList.ChannelsSetCurrent(ChannelLines);
-                                var tip = GetLineRectangleIntersection(playerLocation, rectCenter,
-                                    bgPos, bgPos + bgSize);
-                                drawList.AddLine(playerLocation, tip, lineColor, thickness);
-                                var endDot = OffsetPointOutsideRect(tip, rectCenter, thickness * 0.6f);
+                                drawList.AddLine(playerLocation, nodeCenter, lineColor, thickness);
                                 drawList.ChannelsSetCurrent(ChannelDots);
-                                drawList.AddCircleFilled(endDot, thickness, lineColor);
+                                drawList.AddCircleFilled(nodeCenter, thickness, lineColor);
                                 drawList.AddCircle(
-                                    endDot, thickness, DotOutlineColor, 0, MathF.Max(1f, thickness * 0.35f));
+                                    nodeCenter, thickness, DotOutlineColor, 0, MathF.Max(1f, thickness * 0.35f));
 
 
                             }
@@ -585,12 +586,11 @@
                         else
                         {
                             drawList.ChannelsSetCurrent(ChannelLines);
-                            drawList.AddLine(playerLocation, intersectionPoint, lineColor, thickness);
-                            var endDot = OffsetPointOutsideRect(intersectionPoint, rectCenter, thickness * 0.6f);
+                            drawList.AddLine(playerLocation, nodeCenter, lineColor, thickness);
                             drawList.ChannelsSetCurrent(ChannelDots);
-                            drawList.AddCircleFilled(endDot, thickness, lineColor);
+                            drawList.AddCircleFilled(nodeCenter, thickness, lineColor);
                             drawList.AddCircle(
-                                endDot, thickness, DotOutlineColor, 0, MathF.Max(1f, thickness * 0.35f));
+                                nodeCenter, thickness, DotOutlineColor, 0, MathF.Max(1f, thickness * 0.35f));
 
                         }
                     }
@@ -637,7 +637,7 @@
 
         #region Routing helpers
 
-        private static void BuildAtlasGraph(
+        private void BuildAtlasGraph(
             AtlasMapOffsets atlasMap,
             int nodeCount,
             RectangleF panelRect,
@@ -666,6 +666,8 @@
                     node.UiElementBase.UnscaledSize.Y * nodeScale.Y);
 
                 var nodeCenter = nodeTopLeft + nodeSize * 0.5f;
+                if (LoadTowerMaps().Contains(node.MapName))
+                    nodeCenter.Y += 25f * ComputeUiScale();
 
                 centers[entry.GridPosition] = nodeCenter;
                 completed[entry.GridPosition] = node.IsCompleted;
@@ -837,10 +839,8 @@
 
             var last = centers[path[^1]];
             var rectCenter = (labelBgPos + (labelBgPos + labelBgSize)) * 0.5f;
-            var tip = GetLineRectangleIntersection(last, rectCenter, labelBgPos, labelBgPos + labelBgSize);
-            segments.Add((last, tip, color));
-            var endDot = OffsetPointOutsideRect(tip, rectCenter, thickness * 0.6f);
-            dots.Add((endDot, color, thickness));
+            segments.Add((last, rectCenter, color));
+            dots.Add((rectCenter, color, thickness));
 
             drawList.ChannelsSetCurrent(lineChannel);
             for (int i = 0; i < segments.Count; i++)
@@ -877,6 +877,16 @@
             }
 
             ApplyBiomeOverrides();
+        }
+
+        private HashSet<string> LoadTowerMaps()
+        {
+            return new HashSet<string>(
+                Settings.MapGroups
+                    .Where(group => string.Equals(group.Name, "Towers", StringComparison.OrdinalIgnoreCase))
+                    .SelectMany(group => group.Maps)
+                    .Select(NormalizeName),
+                StringComparer.OrdinalIgnoreCase);
         }
 
         private void LoadContentMap()
@@ -959,6 +969,13 @@
             float pref = ComputeUniformScale(in uiBase, refW, refH);
 
             return pref > 0 ? cur / pref : 1f;
+        }
+
+        private float ComputeUiScale()
+        {
+            var uiBase = GetAtlasPanelUi().UiElementBase;
+            float resScale = ComputeRelativeUiScale(in uiBase, Settings.BaseWidth, Settings.BaseHeight);
+            return Math.Clamp(Settings.ScaleMultiplier * resScale, 0.5f, 4.0f);
         }
 
         private static Vector2 GetFinalTopLeft(in UiElementBaseOffset leaf)
@@ -1054,50 +1071,6 @@
                 ImGui.PopFont();
                 _font.Scale = _prevScale;
             }
-        }
-
-        private static Vector2 GetLineRectangleIntersection(Vector2 lineStart, Vector2 rectCenter, Vector2 rectMin, Vector2 rectMax)
-        {
-            if (lineStart.X >= rectMin.X && lineStart.X <= rectMax.X &&
-                lineStart.Y >= rectMin.Y && lineStart.Y <= rectMax.Y)
-                return lineStart;
-
-            Vector2 direction = rectCenter - lineStart;
-
-            float dirX = direction.X == 0 ? 1e-6f : direction.X;
-            float dirY = direction.Y == 0 ? 1e-6f : direction.Y;
-
-            float tMinX = (rectMin.X - lineStart.X) / dirX;
-            float tMaxX = (rectMax.X - lineStart.X) / dirX;
-            float tMinY = (rectMin.Y - lineStart.Y) / dirY;
-            float tMaxY = (rectMax.Y - lineStart.Y) / dirY;
-
-            if (tMinX > tMaxX)
-                (tMaxX, tMinX) = (tMinX, tMaxX);
-
-            if (tMinY > tMaxY)
-                (tMaxY, tMinY) = (tMinY, tMaxY);
-
-            float tEnter = Math.Max(tMinX, tMinY);
-            float tExit = Math.Min(tMaxX, tMaxY);
-
-            if (tEnter > tExit || tEnter < 0)
-                return rectCenter;
-
-            float t = Math.Min(tEnter, 1.0f);
-
-            return lineStart + direction * t;
-        }
-
-        private static Vector2 OffsetPointOutsideRect(Vector2 borderPoint, Vector2 rectCenter, float distance)
-        {
-            var dir = borderPoint - rectCenter;
-            float lenSq = dir.X * dir.X + dir.Y * dir.Y;
-            if (lenSq< 1e-6f)
-                return borderPoint;
-            dir /= MathF.Sqrt(lenSq);
-
-            return borderPoint + dir* distance;
         }
 
         private void MoveMapGroup(int index, int direction)
